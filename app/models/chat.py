@@ -1,0 +1,21 @@
+from sqlalchemy.orm import relationship
+from sqlalchemy import Column , Integer, Text, DateTime
+from .base import Base
+
+class Chat(Base):
+    __tablename__ = "chat"
+
+    id            = Column(Integer, primary_key=True, index=True)
+    title         = Column(Text)
+    sensitivity   = Column(Integer)
+    warn_limit    = Column(Integer)               
+    created_at    = Column(DateTime)
+    updated_at    = Column(DateTime)
+
+    users         = relationship("User", back_populates="chat")
+    warnings      = relationship("Warning", back_populates="chat")
+    bans          = relationship("Ban", back_populates="chat")
+    spam_words    = relationship("SpamWord", back_populates="chat")
+    spam_links    = relationship("SpamLink", back_populates="chat")
+    messages      = relationship("MessageLog", back_populates="chat")
+    statistics    = relationship("Statistic", back_populates="chat")
