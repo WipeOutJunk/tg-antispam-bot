@@ -18,6 +18,26 @@ SessionLocal = sessionmaker(
     autoflush=False,
     bind=engine
 )
+from .models.base import Base
+from .models.chat import Chat
+from .models.user import User
+from .models.warning import Warning
+from .models.ban import Ban
+from .models.spam_words import SpamWord
+from .models.spam_link import SpamLink
+from .models.message_log import MessageLog
+from .models.statistic import Statistic
+models = {
+    "Chat": Chat,
+    "User": User,
+    "Warning": Warning,
+    "Ban": Ban,
+    "SpamWord": SpamWord,
+    "SpamLink": SpamLink,
+    "MessageLog": MessageLog,
+    "Statistic": Statistic,
+}
+
 
 def init_db():
     # Импортируем все модели, чтобы DeclarativeBase их зарегистрировал
