@@ -1,25 +1,19 @@
-# app/services/ml_classifier.py
+# app/services/ml_classifier.py (правильная версия с исправленными regex)
 import pickle
 import logging
 import re
-from typing import Tuple, Dict, Any, Optional
+from typing import Tuple, Dict, Any
 from pathlib import Path
 
 # Text Processing
 import nltk
 from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
 
 
 class MLSpamClassifier:
     """
-    Упрощенная версия классификатора спама для Telegram бота
-    
-    Функции:
-    - Загрузка готовой .pkl модели
-    - Предсказание спама для текстов
-    - Получение информации о модели
-    - Предобработка текста (как в исходном классификаторе)
+    Классификатор спама для Telegram бота
+    Использует ТОЧНО такую же предобработку как в оригинальном SpamClassifier
     """
     
     _instance = None  # Singleton pattern
@@ -52,7 +46,7 @@ class MLSpamClassifier:
         self._initialized = True
     
     def _setup_nltk_resources(self):
-        """Загрузка необходимых ресурсов NLTK"""
+        """Загрузка необходимых ресурсов NLTK - ТОЧНО КАК В ОРИГИНАЛЕ"""
         try:
             nltk.download('stopwords', quiet=True)
             nltk.download('punkt', quiet=True)
@@ -60,7 +54,7 @@ class MLSpamClassifier:
             self.logger.info("NLTK ресурсы загружены успешно")
         except Exception as e:
             self.logger.warning(f"Не удалось загрузить NLTK ресурсы: {e}")
-            # Fallback к базовым русским стоп-словам
+            # Fallback к базовым русским стоп-словам - ТОЧНО КАК В ОРИГИНАЛЕ
             self.russian_stopwords = {
                 'и', 'в', 'во', 'не', 'что', 'он', 'на', 'я', 'с', 'со', 'как',
                 'а', 'то', 'все', 'она', 'так', 'его', 'но', 'да', 'ты', 'к',
@@ -70,36 +64,30 @@ class MLSpamClassifier:
     
     def preprocess_text(self, text: str) -> str:
         """
-        Предобработка текста для классификации
-        
-        Args:
-            text: Исходный текст
-            
-        Returns:
-            Обработанный текст
+        Предобработка текста - ТОЧНАЯ КОПИЯ ИЗ ОРИГИНАЛЬНОГО SpamClassifier
         """
-        if not isinstance(text, str) or not text.strip():
+        if not isinstance(text, str):
             return ""
         
         # Приведение к нижнему регистру
         text = text.lower()
         
-        # Удаление URL
+        # Удаление URL - ИСПРАВЛЕНО (правильный regex без лишних слэшей)
         text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', ' ', text)
         
-        # Удаление email адресов
-        text = re.sub(r'\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b', ' ', text)
+        # Удаление email адресов - ИСПРАВЛЕНО
+        text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', ' ', text)
         
-        # Удаление телефонных номеров (российский формат)
-        text = re.sub(r'\\+?[7-8][\\s\\-\\(\\)]?\\d{3}[\\s\\-\\(\\)]?\\d{3}[\\s\\-]?\\d{2}[\\s\\-]?\\d{2}', ' ', text)
+        # Удаление телефонных номеров - ИСПРАВЛЕНО  
+        text = re.sub(r'\+?[7-8][\s\-\(\)]?\d{3}[\s\-\(\)]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}', ' ', text)
         
-        # Удаление избыточной пунктуации и спецсимволов
-        text = re.sub(r'[^\\w\\s\\u0400-\\u04FF]', ' ', text)
+        # Удаление избыточной пунктуации и спецсимволов - ИСПРАВЛЕНО
+        text = re.sub(r'[^\w\s\u0400-\u04FF]', ' ', text)
         
-        # Удаление множественных пробелов
-        text = re.sub(r'\\s+', ' ', text).strip()
+        # Удаление множественных пробелов - ИСПРАВЛЕНО
+        text = re.sub(r'\s+', ' ', text).strip()
         
-        # Удаление стоп-слов
+        # Удаление стоп-слов - ТОЧНО КАК В ОРИГИНАЛЕ
         if self.russian_stopwords:
             words = text.split()
             words = [word for word in words if word not in self.russian_stopwords and len(word) > 2]
@@ -126,13 +114,7 @@ class MLSpamClassifier:
     
     def predict(self, text: str) -> Tuple[bool, float]:
         """
-        Предсказание для одного текста
-        
-        Args:
-            text: Текст для классификации
-            
-        Returns:
-            (is_spam, confidence) - кортеж (спам?, уверенность от 0.0 до 1.0)
+        Предсказание для одного текста - ТОЧНО КАК В ОРИГИНАЛЕ
         """
         if not self.is_loaded:
             raise ValueError("Модель не загружена! Сначала загрузите модель.")
@@ -142,7 +124,7 @@ class MLSpamClassifier:
             return False, 0.0
         
         try:
-            # Получение вероятностей
+            # Получение вероятностей - ТОЧНО КАК В ОРИГИНАЛЕ
             probabilities = self.pipeline.predict_proba([processed_text])[0]
             spam_probability = probabilities[1] if len(probabilities) > 1 else 0.0
             

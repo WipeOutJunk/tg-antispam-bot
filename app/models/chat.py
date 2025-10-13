@@ -8,7 +8,8 @@ class Chat(Base):
     id            = Column(Integer, primary_key=True, index=True)
     title         = Column(Text)
     sensitivity   = Column(Integer)
-    warn_limit    = Column(Integer)               
+    warn_limit    = Column(Integer)           
+    quarantine_hours = Column(Integer, default=0)     
     created_at    = Column(DateTime)
     updated_at    = Column(DateTime)
 
