@@ -17,51 +17,20 @@ class ModerationService:
         self.db = db
         self.logger = logger or logging.getLogger(__name__)
 
-    async def handle_message(self, message: Message, spam_results: List[SpamDetectionResult]):
-        """Обработка любого входящего сообщения"""
-        # 1) Лог любого сообщения
-        await self.log_message(message, is_spam=False)
-
-        # 2) Если нет спама — выходим
-        if not spam_results:
-            return
-
-        # 3) Удаляем спам
-        await self.delete_message(message.chat.id, message.message_id)
-        # 4) Логируем спам
-        await self.log_message(message, is_spam=True)
-
-        # 5) Предупреждаем и уведомляем автора
-        reason = self.format_spam_reason(spam_results)
-        await self.issue_warning(message.from_user.id, message.chat.id, reason)
-        await self.notify_spam_action(message, reason)
-
-    # Псевдоним для обратной совместимости
-    handle_spam_message = handle_message
-
-    async def log_message(self, message: Message, is_spam: bool,
-                          spam_results: Optional[List[SpamDetectionResult]] = None):
-        """Сохранить сообщение в MessageLog"""
+    async def handle_spam_message(self, message: Message, spam_results: dict):
+        """
+        Обработка спам-сообщения.
+        Принимает результаты анализа в виде словаря.
+        """
         try:
-            log = MessageLog(
-                chat_id=message.chat.id,
-                user_id=message.from_user.id,
-                content=message.text or message.caption or "",
-                is_spam=is_spam,
-                created_at=datetime.now()
-            )
-            self.db.add(log)
-            self.db.commit()
+            # Выдаем предупреждение
+            reason = self.format_spam_reason(spam_results)
+            await self.issue_warning(message.from_user.id, message.chat.id, reason)
+            
+            self.logger.info(f"Warning issued to user {message.from_user.id} in chat {message.chat.id}")
+            
         except Exception as e:
-            self.db.rollback()
-            self.logger.error("Error logging message: %s", e)
-
-    async def delete_message(self, chat_id: int, message_id: int):
-        """Удалить сообщение из чата"""
-        try:
-            await self.bot.delete_message(chat_id, message_id)
-        except Exception as e:
-            self.logger.error("Error deleting message %s/%s: %s", chat_id, message_id, e)
+            self.logger.error(f"Error in handle_spam_message: {e}")
 
     async def issue_warning(self, user_id: int, chat_id: int, reason: str):
         """Добавить предупреждение в базу"""
@@ -78,20 +47,29 @@ class ModerationService:
             self.db.rollback()
             self.logger.error("Error issuing warning: %s", e)
 
-    async def notify_spam_action(self, message: Message, reason: str):
-        """Уведомить автора об удалении"""
-        text = (
-            f"⚠️ Ваше сообщение было удалено как вредоносное.\n"
-            f"Причина: {reason}"
-        )
+    def format_spam_reason(self, spam_results: dict) -> str:
+        """Преобразовать результаты анализа в читаемую строку"""
+        if not spam_results:
+            return "Неизвестная причина"
+        
+        reasons = spam_results.get('reasons', [])
+        if reasons:
+            return ', '.join(reasons)
+        
+        # Fallback на основании confidence
+        confidence = spam_results.get('confidence', 0)
+        if confidence > 0.8:
+            return "Высокая вероятность спама"
+        elif confidence > 0.6:
+            return "Подозрительное содержимое"
+        else:
+            return "Потенциальный спам"
+    async def notify_user_spam(self, message: Message, reason: str):
         try:
-            await self.bot.send_message(
-                chat_id=message.chat.id,
-                text=text
+            text = (
+                f"⚠️ Ваше сообщение было удалено по подозрению в спаме.\n"
+                f"Причина: {reason}"
             )
+            await self.bot.send_message(chat_id=message.chat.id, text=text)
         except Exception as e:
-            self.logger.error("Error notifying user: %s", e)
-
-    def format_spam_reason(self, results: List[SpamDetectionResult]) -> str:
-        """Преобразовать список результатов в строку"""
-        return ", ".join(r.label for r in results)
+            self.logger.error(f"Ошибка уведомления пользователя: {e}")

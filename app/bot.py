@@ -25,6 +25,7 @@ from .services.statistics_service import StatisticsService
 from .services.quarantine_service import QuarantineService
 
 from app.handlers.admin_panel import router as admin_router
+from app.handlers.message_handler import router as message_router
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -40,8 +41,9 @@ class AntiSpamBot:
         self.bot = Bot(token=BOT_TOKEN)
         self.dp = Dispatcher()
 
-        # Роутер админ-панели
+        # Роутеры
         self.dp.include_router(admin_router)
+        self.dp.include_router(message_router)
 
         # Хук на смену статуса бота
         self.dp.my_chat_member.register(self._on_my_chat_member_update)
@@ -52,40 +54,7 @@ class AntiSpamBot:
         self.statistics_service = StatisticsService()
         self.quarantine_service = QuarantineService(self.bot)
 
-        # Обработчик текстовых сообщений
-        self._register_message_handler()
-
         logger.info("Анти-спам бот инициализирован (F1.1 + F1.2)")
-
-    def _register_message_handler(self):
-        @self.dp.message(
-            F.text,
-            ~F.text.startswith('/')
-        )
-        async def handle_message(message: Message):
-            with SessionLocal() as db:
-                try:
-                    # Получаем настройки чата, но не создаём автоматически
-                    chat_settings = await self.settings_service.get_chat_settings(
-                        message.chat.id, db
-                    )
-                    # Если чат не зарегистрирован вручную или через обновление статуса, игнорируем
-                    if not chat_settings:
-                        return
-
-                    spam_results = await self.spam_analyzer.analyze_message(
-                        message, chat_settings, db
-                    )
-                    if self.spam_analyzer.is_spam(spam_results, chat_settings):
-                        moderation = ModerationService(self.bot, db)
-                        await moderation.handle_spam_message(message, spam_results)
-                        summary = self.spam_analyzer.get_detection_summary(spam_results)
-                        logger.info(
-                            f"Спам обнаружен в чате {message.chat.id} "
-                            f"от пользователя {message.from_user.id}: {summary}"
-                        )
-                except Exception as e:
-                    logger.error(f"Ошибка при обработке сообщения: {e}")
 
     async def _on_my_chat_member_update(self, event: ChatMemberUpdated):
         """
@@ -115,10 +84,11 @@ class AntiSpamBot:
                 except IntegrityError:
                     db.rollback()
                     existing = db.get(Chat, event.chat.id)
-                    existing.title = event.chat.title
-                    existing.updated_at = datetime.utcnow()
-                    db.commit()
-                    logger.info(f"Чат {event.chat.id} обновлён в БД")
+                    if existing:
+                        existing.title = event.chat.title
+                        existing.updated_at = datetime.utcnow()
+                        db.commit()
+                        logger.info(f"Чат {event.chat.id} обновлён в БД")
 
     async def start(self):
         logger.info("Запуск анти-спам бота...")
