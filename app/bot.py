@@ -1,9 +1,10 @@
+# app/bot.py
 import asyncio
 import logging
 from datetime import datetime
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, ChatMemberUpdated
+from aiogram.types import Message, ChatMemberUpdated , ChatPermissions
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import IntegrityError
 
@@ -26,6 +27,7 @@ from .services.quarantine_service import QuarantineService
 
 from app.handlers.admin_panel import router as admin_router
 from app.handlers.message_handler import router as message_router
+from app.handlers.member_sync import router as member_sync_router, schedule_daily_sync
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -44,6 +46,7 @@ class AntiSpamBot:
         # Роутеры
         self.dp.include_router(admin_router)
         self.dp.include_router(message_router)
+        self.dp.include_router(member_sync_router)
 
         # Хук на смену статуса бота
         self.dp.my_chat_member.register(self._on_my_chat_member_update)
@@ -97,6 +100,11 @@ class AntiSpamBot:
         model_info = self.spam_analyzer.get_model_info()
         logger.info(f"Загружена модель: {model_info}")
         logger.info("Активные детекторы: F1.1 (ML-классификатор), F1.2 (проверка ссылок)")
+        
+        # Запускаем задачу ежедневной синхронизации
+        asyncio.create_task(schedule_daily_sync(self.bot))
+        logger.info("Запущена задача ежедневной синхронизации участников")
+        
         await self.dp.start_polling(self.bot)
 
     async def stop(self):
