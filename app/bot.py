@@ -25,7 +25,7 @@ from .services.statistics_service import StatisticsService
 from .services.quarantine_service import QuarantineService
 
 from app.handlers.admin_panel import router as admin_router
-from app.handlers.message_handler import router as message_router
+from app.handlers.message_handler import message_router
 from app.handlers.chat_events import router as chat_events_router
 
 logging.basicConfig(level=logging.INFO)

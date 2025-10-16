@@ -87,7 +87,7 @@ def build_chat_menu(chat: Chat):
     text = (
         f"💬 <b>{title}</b>\n"
         f"ID: <code>{chat.id}</code>  Чувствительность: {chat.sensitivity}/10\n"
-        f"Лимит варнов: {chat.warn_limit}"
+        # f"Лимит варнов: {chat.warn_limit}"
     )
     return text, builder.as_markup()
 

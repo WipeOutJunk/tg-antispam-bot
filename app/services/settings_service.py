@@ -4,6 +4,8 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from ..models.chat import Chat
+from ..models.user import User
+
 from ..config import DEFAULT_SENSITIVITY, DEFAULT_WARN_LIMIT, DEFAULT_QUARANTINE_HOURS
 
 
@@ -22,7 +24,15 @@ class SettingsService:
         except Exception as e:
             self.logger.error("Error fetching settings for %s: %s", chat_id, e)
             raise
+    def get_all_admins() -> list[int]:
+        """
+        Возвращает список telegram_id всех пользователей с is_admin=True.
+        """
+        from ..database import SessionLocal
 
+        with SessionLocal() as session:
+            admins = session.query(User).filter(User.is_admin == True).all()
+            return [admin.telegram_id for admin in admins]
     async def create_default_settings(self, chat_id: int, db: Session, title: Optional[str] = None) -> Chat:
         """Создать настройки по умолчанию для нового чата"""
         try:
