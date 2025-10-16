@@ -10,6 +10,8 @@ from aiogram.filters import Command, Filter
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.orm import Session
 
+from ..services.link_spam_detector import LinkSpamDetector
+from ..models.spam_link import SpamLink
 from ..database import SessionLocal
 from ..models.chat import Chat
 from ..models.user import User
@@ -27,7 +29,10 @@ router = Router()
 pending_sensitivity: dict[int, dict] = {}
 pending_spam_word: dict[int, dict] = {}
 SENS_INPUT_TIMEOUT_SEC = 120
-
+pending_spam_link = {}
+class WaitingSpamLink(Filter):
+    async def __call__(self, message: Message) -> bool:
+        return bool(pending_spam_link.get(message.from_user.id) and message.text)
 def safe_html_escape(text: str) -> str:
     return html.escape(text or "")
 
@@ -72,6 +77,7 @@ def build_chat_menu(chat: Chat):
     builder = InlineKeyboardBuilder()
     builder.button(text="📈 Статистика", callback_data=f"stats_{chat.id}")
     builder.button(text="📝 Логи", callback_data=f"logs_{chat.id}")
+    builder.button(text="🔗 Спам-ссылки", callback_data=f"spam_links_{chat.id}")
     builder.button(text="🚫 Спам-слова", callback_data=f"spam_words_{chat.id}")
     builder.button(text="⚙️ Настройки", callback_data=f"settings_{chat.id}")
     builder.button(text="🔙 Назад", callback_data="admin_chats")
@@ -386,4 +392,212 @@ async def back_to_main(callback: CallbackQuery):
     b.button(text="ℹ️ Инфо", callback_data="admin_info")
     b.adjust(1)
     await callback.message.edit_text("🔐 Админ-панель", reply_markup=b.as_markup(), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("spam_links_"))
+async def show_spam_links(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа", show_alert=True)
+    
+    cid = int(callback.data.split("_")[-1])
+    
+    with SessionLocal() as db:
+        links = db.query(SpamLink).filter(SpamLink.chat_id == cid).all()
+        chat = db.query(Chat).get(cid)
+        title = safe_html_escape(chat.title if chat else "")
+        
+        if not links:
+            text = f"🔗 Спам-ссылки для {title}:\nСписок пуст."
+        else:
+            text = f"🔗 Спам-ссылки ({len(links)}):\n"
+            for i, link in enumerate(links[:20], 1):
+                date = link.added_at.strftime("%d.%m.%Y") if link.added_at else "-"
+                pattern = link.pattern[:50] + "..." if len(link.pattern) > 50 else link.pattern
+                text += f"{i}. `{pattern}` ({date})\n"
+            if len(links) > 20:
+                text += f"... ещё {len(links)-20}"
+    
+    kb = InlineKeyboardBuilder()
+    kb.button(text="➕ Добавить", callback_data=f"add_spam_link_{cid}")
+    kb.button(text="🗑️ Управл.", callback_data=f"manage_spam_links_{cid}")
+    kb.button(text="🔙 Назад", callback_data=f"chat_{cid}")
+    kb.adjust(2, 1)
+    
+    await callback.message.edit_text(text, reply_markup=kb.as_markup(), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("add_spam_link_"))
+async def start_add_spam_link(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа", show_alert=True)
+    
+    cid = int(callback.data.split("_")[-1])
+    pending_spam_link[callback.from_user.id] = {"chat_id": cid}
+    
+    kb = InlineKeyboardBuilder()
+    kb.button(text="❌ Отмена", callback_data=f"spam_links_{cid}")
+    
+    await callback.message.edit_text(
+        "🔗 Отправьте домен или ссылку:\n\n"
+        "Примеры:\n"
+        "• `example.com` - блокировка домена\n"
+        "• `*.example.com` - блокировка всех поддоменов\n"
+        "• `https://bad-site.com/promo` - точная ссылка\n\n"
+        "Можно несколько через запятую.",
+        reply_markup=kb.as_markup(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+@router.message(WaitingSpamLink())
+async def process_spam_link(message: Message):
+    st = pending_spam_link.pop(message.from_user.id, {})
+    cid = st.get("chat_id")
+    
+    links = [l.strip() for l in message.text.split(",") if l.strip()]
+    
+    with SessionLocal() as db:
+        detector = LinkSpamDetector()
+        added_count = 0
+        skipped_count = 0
+        
+        for link in links:
+            try:
+                # Нормализуем ссылку
+                if link.startswith(('http://', 'https://')):
+                    from urllib.parse import urlparse
+                    parsed = urlparse(link)
+                    normalized_link = parsed.netloc.lower()
+                    if normalized_link.startswith('www.'):
+                        normalized_link = normalized_link[4:]
+                else:
+                    normalized_link = link.lower()
+                
+                # Проверяем что не существует уже
+                existing = db.query(SpamLink).filter(
+                    SpamLink.chat_id == cid,
+                    SpamLink.pattern == normalized_link
+                ).first()
+                
+                if existing:
+                    skipped_count += 1
+                    continue
+                
+                # Добавляем
+                await detector.add_to_blacklist(db, cid, normalized_link, message.from_user.id)
+                added_count += 1
+                
+            except Exception as e:
+                logger.error(f"Error adding spam link {link}: {e}")
+                skipped_count += 1
+        
+        if len(links) == 1:
+            if added_count > 0:
+                resp = f"✅ Добавлено: {links[0]}"
+            else:
+                resp = f"⚠️ Уже есть: {links[0]}"
+        else:
+            resp = f"✅ {added_count} добавлено, ⚠️ {skipped_count} пропущено"
+    
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🔙 К списку", callback_data=f"spam_links_{cid}")
+    
+    await message.answer(resp, reply_markup=kb.as_markup(), parse_mode="HTML")
+
+@router.callback_query(F.data.startswith("manage_spam_links_"))
+async def manage_spam_links(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа", show_alert=True)
+    
+    cid = int(callback.data.split("_")[-1])
+    
+    with SessionLocal() as db:
+        links = db.query(SpamLink).filter(SpamLink.chat_id == cid).all()
+        
+        if not links:
+            return await callback.answer("Пусто.", show_alert=True)
+        
+        text = "🗑️ Удалите ссылку:"
+        b = InlineKeyboardBuilder()
+        
+        for link in links[:15]:
+            display_text = link.pattern[:30] + "..." if len(link.pattern) > 30 else link.pattern
+            b.button(text=f"❌ {display_text}", callback_data=f"del_link_{link.id}_{cid}")
+        
+        b.button(text="🗑️ Очистить всё", callback_data=f"clear_links_{cid}")
+        b.button(text="🔙 Назад", callback_data=f"spam_links_{cid}")
+        b.adjust(1)
+        
+        await callback.message.edit_text(text, reply_markup=b.as_markup(), parse_mode="HTML")
+        await callback.answer()
+
+@router.callback_query(F.data.startswith("del_link_"))
+async def delete_spam_link(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа", show_alert=True)
+    
+    _, link_id, cid = callback.data.split("_")
+    
+    with SessionLocal() as db:
+        link = db.query(SpamLink).get(int(link_id))
+        if link:
+            detector = LinkSpamDetector()
+            await detector.remove_from_blacklist(db, int(cid), link.pattern)
+    
+    await manage_spam_links(callback)
+
+@router.callback_query(F.data.startswith("clear_links_"))
+async def clear_spam_links(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа", show_alert=True)
+    
+    cid = int(callback.data.split("_")[-1])
+    
+    with SessionLocal() as db:
+        deleted_count = db.query(SpamLink).filter(SpamLink.chat_id == cid).delete()
+        db.commit()
+        logger.info(f"Cleared {deleted_count} spam links for chat {cid}")
+    
+    await show_spam_links(callback)
+
+# 6. ТАКЖЕ ДОБАВИТЬ В ГЛАВНОЕ МЕНЮ АДМИНКИ (в cmd_admin):
+@router.message(Command("admin"))
+async def cmd_admin(message: Message):
+    if message.chat.type != "private" or not is_admin(message.from_user.id):
+        await message.answer("❌ Нет доступа.")
+        return
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📊 Мои чаты", callback_data="admin_chats")
+    builder.button(text="📋 Логи", callback_data="admin_logs")
+    builder.button(text="🔗 Все спам-ссылки", callback_data="admin_all_links")  # НОВОЕ
+    builder.button(text="ℹ️ Инфо", callback_data="admin_info")
+    builder.adjust(1)
+    
+    await message.answer("🔐 Админ-панель", reply_markup=builder.as_markup(), parse_mode="HTML")
+
+@router.callback_query(F.data == "admin_all_links")
+async def show_all_spam_links(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа", show_alert=True)
+    
+    with SessionLocal() as db:
+        links = db.query(SpamLink).order_by(SpamLink.added_at.desc()).limit(50).all()
+        
+        if not links:
+            text = "🔗 Спам-ссылки:\nСписок пуст."
+        else:
+            text = f"🔗 Все спам-ссылки ({len(links)}):\n\n"
+            for link in links[:20]:
+                date = link.added_at.strftime("%d.%m") if link.added_at else "-"
+                chat_info = f"C{link.chat_id}"
+                pattern = link.pattern[:40] + "..." if len(link.pattern) > 40 else link.pattern
+                text += f"• `{pattern}` | {chat_info} | {date}\n"
+            if len(links) > 20:
+                text += f"\n... ещё {len(links)-20}"
+    
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🔙 Назад", callback_data="admin_main")
+    
+    await callback.message.edit_text(text, reply_markup=kb.as_markup(), parse_mode="HTML")
     await callback.answer()

@@ -61,7 +61,7 @@ class AntiSpamBot:
 
         await self.dp.start_polling(
             self.bot,
-            allowed_updates=["message", "callback_query", "my_chat_member"]
+            allowed_updates=["message", "callback_query", "my_chat_member", "chat_member"]
         )
 
     async def stop(self):

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 
 from aiogram import Router, F
@@ -20,9 +20,28 @@ from ..models.message_log import MessageLog
 from ..models.user import User
 from ..services.spam_analyzer import SpamAnalyzer
 from ..services.settings_service import SettingsService
+from ..services.homoglyph_detector import HomoglyphDetector
 
 logger = logging.getLogger(__name__)
 router = Router()
+def create_mute_until(minutes=0, hours=0, days=0):
+    """Создает безопасное время для мута, предотвращая мут 'навсегда'"""
+    from datetime import timezone
+    now = datetime.now(timezone.utc)
+    until = now + timedelta(minutes=minutes, hours=hours, days=days)
+    
+    # Проверяем что время в будущем (минимум 30 секунд)
+    if until <= now + timedelta(seconds=30):
+        logger.error(f"Mute time too close or in past: {until} <= {now}")
+        until = now + timedelta(minutes=1)  # минимум 1 минута
+    
+    # Проверяем что не больше 365 дней (лимит Telegram)
+    if (until - now).days > 365:
+        logger.warning(f"Mute duration too long: {(until - now).days} days")
+        until = now + timedelta(days=30)  # максимум 30 дней
+        
+    logger.info(f"Mute until: {until.strftime('%Y-%m-%d %H:%M:%S')} UTC (in {until - now})")
+    return until.timestamp()
 def get_or_create_user(telegram_id, username, chat_id, db):
     """
     Получить пользователя из БД или создать нового если его нет
@@ -126,167 +145,187 @@ async def handle_all_messages(message: Message):
         db.commit()
         
         # 1) Проверка флуда
-        logger.debug("Checking for flood...")
-        try:
-            recent_messages = db.query(MessageLog).filter(
-                and_(
-                    MessageLog.chat_id == message.chat.id,
-                    MessageLog.user_id == message.from_user.id,
-                    MessageLog.created_at > now - timedelta(seconds=7)
-                )
-            ).all()
+    #     logger.debug("Checking for flood...")
+    #     try:
+    #         recent_messages = db.query(MessageLog).filter(
+    #             and_(
+    #                 MessageLog.chat_id == message.chat.id,
+    #                 MessageLog.user_id == message.from_user.id,
+    #                 MessageLog.content == message.text,
+    #                 MessageLog.created_at > now - timedelta(seconds=7)
+    #             )
+    #         ).all()
             
-            recent_count = len(recent_messages)
+    #         recent_count = len(recent_messages)
             
-            if recent_count >= 3:
-                logger.info(f"FLOOD DETECTED: {recent_count} messages in 7 seconds from user {message.from_user.id}")
+    #         if recent_count >= 3:
+    #             logger.info(f"FLOOD DETECTED: {recent_count} messages in 7 seconds from user {message.from_user.id}")
                 
-                # Удаляем ВСЕ флудовые сообщения (включая текущее)
-                for msg_log in recent_messages:
-                    try:
-                        await message.bot.delete_message(message.chat.id, msg_log.message_id)
-                        logger.debug(f"Deleted flood message {msg_log.message_id}")
-                    except Exception as e:
-                        logger.debug(f"Could not delete message {msg_log.message_id}: {e}")
+    #             # Удаляем ВСЕ флудовые сообщения (включая текущее)
+    #             for msg_log in recent_messages:
+    #                 try:
+    #                     await message.bot.delete_message(message.chat.id, msg_log.message_id)
+    #                     logger.debug(f"Deleted flood message {msg_log.message_id}")
+    #                 except Exception as e:
+    #                     logger.debug(f"Could not delete message {msg_log.message_id}: {e}")
                 
-                try:
-                    await message.delete()
-                except:
-                    pass
+    #             try:
+    #                 await message.delete()
+    #             except:
+    #                 pass
                     
-                # Мутим пользователя
-                mute_until = now + timedelta(minutes=1)
+    #             # Мутим пользователя
+    #             mute_until = now + timedelta(minutes=1)
                 
-                await message.bot.restrict_chat_member(
-                    chat_id=message.chat.id,
-                    user_id=message.from_user.id,
-                    permissions=ChatPermissions(can_send_messages=False),
-                    until_date=mute_until.timestamp()
-                )
+    #             await message.bot.restrict_chat_member(
+    #                 chat_id=message.chat.id,
+    #                 user_id=message.from_user.id,
+    #                 permissions=ChatPermissions(can_send_messages=False),
+    #                 until_date=mute_until.timestamp()
+    #             )
                 
-                # Отправляем уведомление в чат
-                mention = message.from_user.username or message.from_user.full_name
-                await message.bot.send_message(
-                    message.chat.id,
-                    f"⚠️ {mention} заблокирован на 1 минут за флуд .",
-                    parse_mode="HTML"
-                )
+    #             # Отправляем уведомление в чат
+    #             mention = message.from_user.username or message.from_user.full_name
+    #             await message.bot.send_message(
+    #                 message.chat.id,
+    #                 f"⚠️ {mention} заблокирован на 1 минут за флуд .",
+    #                 parse_mode="HTML"
+    #             )
                 
-                logger.info(f"User {message.from_user.id} muted 5min for flood, deleted {recent_count} messages")
-                 # НОВОЕ: Уведомление админам о флуде
-                admin_text = (
-                    f"⚡ <b>Обнаружен флуд</b>\n\n"
-                    f"Чат: {message.chat.title or message.chat.id}\n"
-                    f"Пользователь: @{mention} ({message.from_user.id})\n"
-                    f"Количество сообщений: {recent_count} за 20 секунд\n"
-                    f"Действие: Мут на 5 минут"
-                )
+    #             logger.info(f"User {message.from_user.id} muted 5min for flood, deleted {recent_count} messages")
+    #              # НОВОЕ: Уведомление админам о флуде
+    #             admin_text = (
+    #                 f"⚡ <b>Обнаружен флуд</b>\n\n"
+    #                 f"Чат: {message.chat.title or message.chat.id}\n"
+    #                 f"Пользователь: @{mention} ({message.from_user.id})\n"
+    #                 f"Количество сообщений: {recent_count} за 20 секунд\n"
+    #                 f"Действие: Мут на 5 минут"
+    #             )
                 
-                kb = InlineKeyboardMarkup(inline_keyboard=[[
-                    InlineKeyboardButton(
-                        text="✅ Снять мут",
-                        callback_data=f"unmute_flood:{message.chat.id}:{message.from_user.id}"
-                    ),
-                    InlineKeyboardButton(
-                        text="ℹ️ Информация/отклонить",
-                        callback_data=f"info_flood:{message.chat.id}:{message.from_user.id}"
-                    )
-                ]])
+    #             kb = InlineKeyboardMarkup(inline_keyboard=[[
+    #                 InlineKeyboardButton(
+    #                     text="✅ Снять мут",
+    #                     callback_data=f"unmute_flood:{message.chat.id}:{message.from_user.id}"
+    #                 ),
+    #                 InlineKeyboardButton(
+    #                     text="ℹ️ Информация/отклонить",
+    #                     callback_data=f"info_flood:{message.chat.id}:{message.from_user.id}"
+    #                 )
+    #             ]])
                 
-                try:
-                    admin_ids = get_all_admins()
-                    if not admin_ids:
-                        logger.warning("No admins found - flood notifications will not be sent!")
-                    else:
-                        logger.info(f"Sending flood alert to {len(admin_ids)} admins")
-                        for admin_id in admin_ids:
-                            await message.bot.send_message(
-                                admin_id, admin_text, parse_mode="HTML", reply_markup=kb
-                            )
-                            logger.info(f"Flood alert sent to admin {admin_id}")
-                except Exception as e:
-                    logger.error(f"Error sending flood alert to admins: {e}")
+    #             try:
+    #                 admin_ids = get_all_admins()
+    #                 if not admin_ids:
+    #                     logger.warning("No admins found - flood notifications will not be sent!")
+    #                 else:
+    #                     logger.info(f"Sending flood alert to {len(admin_ids)} admins")
+    #                     for admin_id in admin_ids:
+    #                         await message.bot.send_message(
+    #                             admin_id, admin_text, parse_mode="HTML", reply_markup=kb
+    #                         )
+    #                         logger.info(f"Flood alert sent to admin {admin_id}")
+    #             except Exception as e:
+    #                 logger.error(f"Error sending flood alert to admins: {e}")
                 
-                logger.info(f"User {message.from_user.id} muted 5min for flood, deleted {recent_count} messages")
-                # Обновляем лог - помечаем все как спам
-                for msg_log in recent_messages:
-                    msg_log.is_spam = True
-                log_entry.is_spam = True
-                db.commit()
+    #             logger.info(f"User {message.from_user.id} muted 5min for flood, deleted {recent_count} messages")
+    #             # Обновляем лог - помечаем все как спам
+    #             for msg_log in recent_messages:
+    #                 msg_log.is_spam = True
+    #             log_entry.is_spam = True
+    #             db.commit()
                 
-                return
+    #             return
                 
-        except Exception as e:
-            logger.error(f"Error checking flood: {e}")
+    #     except Exception as e:
+    #         logger.error(f"Error checking flood: {e}")
 
-        # 2) Проверка гомоглифов (только для текста)
-        if message.text and len(message.text) > 3:
-            logger.debug("Checking for homoglyphs...")
-            try:
-                # Простая проверка на кириллицу с латиницей
-                cyrillic = bool(re.search(r'[а-яё]', message.text.lower()))
-                latin = bool(re.search(r'[a-z]', message.text.lower()))
-                homoglyphs_detected = cyrillic and latin
+    #    # 2) Проверка гомоглифов (только для текста)
+    #     if message.text and len(message.text) > 3:
+    #         logger.debug("Checking for homoglyphs...")
+    #         try:
+    #             # Используем новый продвинутый детектор гомоглифов
+    #             detector = HomoglyphDetector()
                 
-                if homoglyphs_detected:
-                    logger.info(f"HOMOGLYPHS DETECTED in message: {message.text[:50]}...")
+    #             # Получаем настройки чувствительности из БД (или используем по умолчанию)
+    #             sensitivity = 3  # По умолчанию средняя чувствительность
+    #             try:
+    #                 svc = SettingsService()
+    #                 chat_settings = await svc.get_chat_settings(message.chat.id, db)
+    #                 if chat_settings and hasattr(chat_settings, 'homoglyph_sensitivity'):
+    #                     sensitivity = chat_settings.homoglyph_sensitivity
+    #             except Exception as e:
+    #                 logger.debug(f"Could not get homoglyph sensitivity settings: {e}")
+                
+    #             # Проверяем сообщение на гомоглифы
+    #             homoglyphs_detected, reason, confidence = await detector.detect_homoglyphs(
+    #                 text=message.text,
+    #                 chat_id=message.chat.id,
+    #                 user_id=message.from_user.id,
+    #                 sensitivity=sensitivity
+    #             )
+                
+    #             if homoglyphs_detected:
+    #                 logger.info(f"HOMOGLYPHS DETECTED: {reason} (confidence: {confidence:.2f})")
                     
-                    # Удаляем сообщение и мутим
-                    await message.delete()
-                    mute_until = now + timedelta(minutes=10)
+    #                 # Удаляем сообщение и мутим
+    #                 await message.delete()
+    #                 mute_until = create_mute_until(minutes=5)  # Используем безопасное время
                     
-                    await message.bot.restrict_chat_member(
-                        chat_id=message.chat.id,
-                        user_id=message.from_user.id,
-                        permissions=ChatPermissions(can_send_messages=False),
-                        until_date=mute_until
-                    )
+    #                 await message.bot.restrict_chat_member(
+    #                     chat_id=message.chat.id,
+    #                     user_id=message.from_user.id,
+    #                     permissions=ChatPermissions(can_send_messages=False),
+    #                     until_date=mute_until
+    #                 )
                     
-                    # Уведомление в чат
-                    mention = message.from_user.username or message.from_user.full_name
-                    await message.bot.send_message(
-                        message.chat.id,
-                        f"⚠️ Сообщение от @{mention} удалено за использование гомоглифов. Мут на 10 минут.",
-                        parse_mode="HTML"
-                    )
+    #                 # Уведомление в чат
+    #                 mention = message.from_user.username or message.from_user.full_name
+    #                 await message.bot.send_message(
+    #                     message.chat.id,
+    #                     f"⚠️ Сообщение от @{mention} удалено за использование гомоглифов. Мут на 10 минут.\n"
+    #                     f"Причина: {reason}",
+    #                     parse_mode="HTML"
+    #                 )
                     
-                    # Уведомление админам
-                    alert_text = (
-                        f"⚠️ <b>Гомоглифы обнаружены</b>\n"
-                        f"Чат: {message.chat.title or message.chat.id}\n"
-                        f"Пользователь: @{mention}\n\n"
-                        f"Сообщение:\n<code>{content[:200]}</code>"
-                    )
+    #                 # Уведомление админам (с подробной информацией)
+    #                 alert_text = (
+    #                     f"⚠️ <b>Гомоглифы обнаружены</b>\n"
+    #                     f"Чат: {message.chat.title or message.chat.id}\n"
+    #                     f"Пользователь: @{mention} ({message.from_user.id})\n"
+    #                     f"Уверенность: {confidence:.1%}\n"
+    #                     f"Причина: {reason}\n\n"
+    #                     f"Сообщение:\n<code>{content[:200]}</code>"
+    #                 )
                     
-                    kb = InlineKeyboardMarkup(inline_keyboard=[[
-                        InlineKeyboardButton(
-                            text="✅ Одобрить и восстановить",
-                            callback_data=f"approve_homo:{message.chat.id}:{message.message_id}:{message.from_user.id}"
-                        ),
-                        InlineKeyboardButton(
-                            text="❌ Отклонить",
-                            callback_data=f"reject_homo:{message.chat.id}:{message.message_id}"
-                        )
-                    ]])
+    #                 kb = InlineKeyboardMarkup(inline_keyboard=[[
+    #                     InlineKeyboardButton(
+    #                         text="✅ Одобрить и восстановить",
+    #                         callback_data=f"approve_homo:{message.chat.id}:{message.message_id}:{message.from_user.id}"
+    #                     ),
+    #                     InlineKeyboardButton(
+    #                         text="❌ Отклонить",
+    #                         callback_data=f"reject_homo:{message.chat.id}:{message.message_id}"
+    #                     )
+    #                 ]])
                     
-                    try:
-                        admin_ids = get_all_admins()
-                        if not admin_ids:
-                            logger.warning("No admins found - homoglyph notifications will not be sent!")
-                        else:
-                            logger.info(f"Sending homoglyph alert to {len(admin_ids)} admins")
-                            for admin_id in admin_ids:
-                                await message.bot.send_message(
-                                    admin_id, alert_text, parse_mode="HTML", reply_markup=kb
-                                )
-                                logger.info(f"Homoglyph alert sent to admin {admin_id}")
-                    except Exception as e:
-                        logger.error(f"Error sending homoglyph alert to admins: {e}")
+    #                 try:
+    #                     admin_ids = get_all_admins()
+    #                     if not admin_ids:
+    #                         logger.warning("No admins found - homoglyph notifications will not be sent!")
+    #                     else:
+    #                         logger.info(f"Sending homoglyph alert to {len(admin_ids)} admins")
+    #                         for admin_id in admin_ids:
+    #                             await message.bot.send_message(
+    #                                 admin_id, alert_text, parse_mode="HTML", reply_markup=kb
+    #                             )
+    #                             logger.info(f"Homoglyph alert sent to admin {admin_id}")
+    #                 except Exception as e:
+    #                     logger.error(f"Error sending homoglyph alert to admins: {e}")
                     
-                    return
-            except Exception as e:
-                logger.error(f"Error checking homoglyphs: {e}")
-
+    #                 return
+                    
+    #         except Exception as e:
+    #             logger.error(f"Error checking homoglyphs: {e}")
         # 3) Проверка спам-слов (только для текста)
         if message.text:
             logger.debug("Checking for spam words...")
