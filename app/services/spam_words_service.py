@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from ..models.spam_words import SpamWord
 from ..models.chat import Chat
 import logging
-
+import re
 logger = logging.getLogger(__name__)
 
 
@@ -148,24 +148,33 @@ class SpamWordsService:
         try:
             if not message_text:
                 return False, None
-            
+
             # Получаем спам-слова для чата
             spam_words = await self.get_chat_spam_words(chat_id, db)
-            
+
             if not spam_words:
                 return False, None
-            
+
             # Нормализуем текст сообщения
             normalized_text = message_text.lower()
-            
-            # Проверяем каждое спам-слово
+
             for spam_word in spam_words:
-                if spam_word.word in normalized_text:
+                word_lower = spam_word.word.lower().strip()
+
+                if not word_lower:  # Пропускаем пустые слова
+                    continue
+
+                # Используем регулярное выражение с границами слов
+                # \\b - граница слова (начало/конец слова, пробел, знак препинания)
+                # re.escape() - экранирует специальные символы regex
+                pattern = r'\b' + re.escape(word_lower) + r'\b'
+
+                if re.search(pattern, normalized_text):
                     logger.info(f"Found spam word '{spam_word.word}' in message for chat {chat_id}")
                     return True, spam_word.word
-            
+
             return False, None
-            
+
         except Exception as e:
             logger.error(f"Error checking spam words: {e}")
             return False, None

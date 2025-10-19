@@ -277,7 +277,7 @@ async def handle_all_messages(message: Message):
                     logger.info(f"SPAM WORD DETECTED: '{found_word}' in message from user {message.from_user.id}")
 
                     await message.delete()
-                    until = now + timedelta(hours=1)
+                    until = now + timedelta(minutes=5)
                     await message.bot.restrict_chat_member(
                         chat_id=message.chat.id,
                         user_id=message.from_user.id,
@@ -305,11 +305,24 @@ async def handle_all_messages(message: Message):
                         )
                     ]])
 
+                       # Получаем информацию о пользователе
+                    username = f"@{message.from_user.username}" if message.from_user.username else "без username"
+                    user_id = message.from_user.id
+                    full_name = message.from_user.full_name
+
+                    # Форматируем текст сообщения для отображения
+                    msg_preview = message.text[:200] if len(message.text) <= 200 else message.text[:197] + "..."
+
                     admin_text = (
-                        f"🚫 <b>СПАМ СЛОВО</b>\n\n"
-                        f"👤 <b>{message.from_user.full_name}</b>\n"
-                        f"🔍 Слово: <code>{found_word}</code>\n"
-                        f"📝 Текст: <code>{message.text[:200]}</code>"
+                        f"🚫 <b>ОБНАРУЖЕНО СПАМ-СЛОВО</b>"
+                        f"👤 <b>Пользователь:</b> {full_name}"
+                        f"🔑 <b>Username:</b> {username}"
+                        f"🆔 <b>ID:</b> <code>{user_id}</code>"
+                        f"💬 <b>Чат ID:</b> <code>{message.chat.id}</code>"
+                        f"🔍 <b>Найденное слово:</b> <code>{found_word}</code>"
+                        f"⏱ <b>Время мута:</b> 1 час"
+                        f"📝 <b>Текст сообщения:</b>"
+                        f"<code>{msg_preview}</code>"
                     )
 
                     await send_notifications_to_admins_with_sync(
@@ -359,7 +372,7 @@ async def handle_all_messages(message: Message):
             logger.info(f"AI SPAM DETECTED from user {message.from_user.id}")
 
             await message.delete()
-            until = now + timedelta(hours=3)
+            until = now + timedelta(minutes=5)
             await message.bot.restrict_chat_member(
                 chat_id=message.chat.id,
                 user_id=message.from_user.id,
@@ -386,11 +399,20 @@ async def handle_all_messages(message: Message):
                     callback_data=f"reject_ai:{message.chat.id}:{message.message_id}"
                 )
             ]])
-
+            username = f"@{message.from_user.username}" if message.from_user.username else "без username"
+            user_id = message.from_user.id
+            full_name = message.from_user.full_name
+            # Форматируем текст сообщения для отображения
+            msg_preview = message.text[:200] if len(message.text) <= 200 else message.text[:197] + "..."
+            
             admin_text = (
                 f"🔔 <b>AI СПАМ</b>\n\n"
-                f"👤 <b>{message.from_user.full_name}</b>\n"
-                f"📝 Контент: <code>{content[:200]}</code>"
+                f"👤 <b>Пользователь:</b> {full_name}\n"
+                f"🔑 <b>Username:</b> {username}\n"
+                f"🆔 <b>ID:</b> <code>{user_id}</code>\n"
+                f"💬 <b>Чат ID:</b> <code>{message.chat.id}</code>\n"
+                f"📝 <b>Текст сообщения:</b>\n"
+                f" <code>{content[:200]}</code>"
             )
 
             await send_notifications_to_admins_with_sync(
