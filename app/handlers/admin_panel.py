@@ -1,14 +1,17 @@
 # app/handlers/admin_panel.py
 
+
 import logging
 from datetime import datetime, timedelta
 import html
+
 
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command, Filter
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.orm import Session
+
 
 from ..services.link_spam_detector import LinkSpamDetector
 from ..models.spam_link import SpamLink
@@ -22,19 +25,24 @@ from ..models.spam_words import SpamWord
 from ..services.settings_service import SettingsService
 from ..services.spam_words_service import SpamWordsService
 
+
 logger = logging.getLogger(__name__)
 router = Router()
+
 
 # State
 pending_sensitivity: dict[int, dict] = {}
 pending_spam_word: dict[int, dict] = {}
 SENS_INPUT_TIMEOUT_SEC = 120
 pending_spam_link = {}
+
 class WaitingSpamLink(Filter):
     async def __call__(self, message: Message) -> bool:
         return bool(pending_spam_link.get(message.from_user.id) and message.text)
+
 def safe_html_escape(text: str) -> str:
     return html.escape(text or "")
+
 
 def is_admin(user_id: int) -> bool:
     """Проверка, является ли пользователь админом в любом чате"""
@@ -46,6 +54,7 @@ def is_admin(user_id: int) -> bool:
         result = bool(user)
         logger.info(f"is_admin check for {user_id}: {result}")
         return result
+
 
 async def sync_chat_admins(chat_id: int, bot):
     """Синхронизация админов чата с Telegram API"""
@@ -73,6 +82,7 @@ async def sync_chat_admins(chat_id: int, bot):
     except Exception as e:
         logger.error(f"Error syncing admins for chat {chat_id}: {e}")
 
+
 def build_chat_menu(chat: Chat):
     builder = InlineKeyboardBuilder()
     builder.button(text="📈 Статистика", callback_data=f"stats_{chat.id}")
@@ -91,14 +101,17 @@ def build_chat_menu(chat: Chat):
     )
     return text, builder.as_markup()
 
+
 class WaitingSensitivity(Filter):
     async def __call__(self, message: Message) -> bool:
         st = pending_sensitivity.get(message.from_user.id)
         return bool(st and st["chat_context_id"] == message.chat.id and message.text)
 
+
 class WaitingSpamWord(Filter):
     async def __call__(self, message: Message) -> bool:
         return bool(pending_spam_word.get(message.from_user.id) and message.text)
+
 
 @router.message(Command("start"))
 async def cmd_start(message: Message):
@@ -109,6 +122,7 @@ async def cmd_start(message: Message):
         "/clear — очистить чат (личный)\n"
         "/admin — админ-панель"
     )
+
 
 @router.message(Command("clear"))
 async def cmd_clear(message: Message):
@@ -124,6 +138,7 @@ async def cmd_clear(message: Message):
     c = await message.answer("🧹 Чат очищен.")
     await c.delete(delay=3)
 
+
 @router.message(Command("admin"))
 async def cmd_admin(message: Message):
     if message.chat.type != "private" or not is_admin(message.from_user.id):
@@ -135,6 +150,7 @@ async def cmd_admin(message: Message):
     builder.button(text="ℹ️ Инфо", callback_data="admin_info")
     builder.adjust(1)
     await message.answer("🔐 <b>Админ-панель</b>\nВыберите:", reply_markup=builder.as_markup(), parse_mode="HTML")
+
 
 @router.callback_query(F.data == "admin_chats")
 async def show_chats(callback: CallbackQuery):
@@ -151,6 +167,7 @@ async def show_chats(callback: CallbackQuery):
     b.adjust(1)
     await callback.message.edit_text("📊 Список чатов:", reply_markup=b.as_markup(), parse_mode="HTML")
     await callback.answer()
+
 
 @router.callback_query(F.data.startswith("chat_"))
 async def show_chat_menu(callback: CallbackQuery):
@@ -169,6 +186,7 @@ async def show_chat_menu(callback: CallbackQuery):
     text, kb = build_chat_menu(chat)
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     await callback.answer()
+
 
 @router.callback_query(F.data.startswith("settings_"))
 async def ask_sensitivity(callback: CallbackQuery):
@@ -191,6 +209,7 @@ async def ask_sensitivity(callback: CallbackQuery):
     )
     await callback.answer()
 
+
 @router.message(WaitingSensitivity())
 async def set_sensitivity(message: Message):
     st = pending_sensitivity.pop(message.from_user.id, {})
@@ -207,6 +226,7 @@ async def set_sensitivity(message: Message):
     await message.answer(f"✅ Установлено: {v}/10")
     text, kb = build_chat_menu(chat)
     await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
 
 @router.callback_query(F.data.startswith("stats_"))
 async def show_stats(callback: CallbackQuery):
@@ -230,6 +250,7 @@ async def show_stats(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=kb.as_markup(), parse_mode="HTML")
     await callback.answer()
 
+
 @router.callback_query(F.data.startswith("logs_"))
 async def show_logs(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
@@ -251,6 +272,7 @@ async def show_logs(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=kb.as_markup(), parse_mode="HTML")
     await callback.answer()
 
+
 @router.callback_query(F.data == "admin_logs")
 async def show_global_logs(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
@@ -265,6 +287,7 @@ async def show_global_logs(callback: CallbackQuery):
     kb.button(text="🔙 Назад", callback_data="admin_main")
     await callback.message.edit_text(text, reply_markup=kb.as_markup(), parse_mode="HTML")
     await callback.answer()
+
 
 @router.callback_query(F.data == "admin_info")
 async def show_info(callback: CallbackQuery):
@@ -282,6 +305,7 @@ async def show_info(callback: CallbackQuery):
     kb.button(text="🔙 Назад", callback_data="admin_main")
     await callback.message.edit_text(text, reply_markup=kb.as_markup(), parse_mode="HTML")
     await callback.answer()
+
 
 @router.callback_query(F.data.startswith("spam_words_"))
 async def show_spam_words(callback: CallbackQuery):
@@ -311,6 +335,7 @@ async def show_spam_words(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=kb.as_markup(), parse_mode="HTML")
     await callback.answer()
 
+
 @router.callback_query(F.data.startswith("add_spam_word_"))
 async def start_add_spam_word(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
@@ -327,6 +352,7 @@ async def start_add_spam_word(callback: CallbackQuery):
         parse_mode="HTML"
     )
     await callback.answer()
+
 
 @router.message(WaitingSpamWord())
 async def process_spam_word(message: Message):
@@ -347,6 +373,7 @@ async def process_spam_word(message: Message):
     
     await message.answer(resp, reply_markup=kb.as_markup(), parse_mode="HTML")
 
+
 @router.callback_query(F.data.startswith("manage_spam_words_"))
 async def manage_spam_words(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
@@ -366,14 +393,23 @@ async def manage_spam_words(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=b.as_markup(), parse_mode="HTML")
     await callback.answer()
 
+
 @router.callback_query(F.data.startswith("del_spam_"))
 async def delete_spam_word(callback: CallbackQuery):
+    """Удаление одного спам-слова"""
     if not is_admin(callback.from_user.id):
         return await callback.answer("Нет доступа", show_alert=True)
-    _, wid, cid = callback.data.split("_")
+
+    # ✅ ИСПРАВЛЕНО: Правильная распаковка callback_data
+    # "del_spam_123_456".split("_") = ["del", "spam", "123", "456"]
+    parts = callback.data.split("_")
+    wid = int(parts[2])   # ID спам-слова
+    cid = int(parts[3])   # ID чата
+
     with SessionLocal() as db:
-        await SpamWordsService().remove_spam_word(int(cid), int(wid), db)
+        await SpamWordsService().remove_spam_word(cid, wid, db)
     await manage_spam_words(callback)
+
 
 @router.callback_query(F.data.startswith("clear_spam_"))
 async def clear_spam(callback: CallbackQuery):
@@ -384,6 +420,7 @@ async def clear_spam(callback: CallbackQuery):
         await SpamWordsService().clear_chat_spam_words(cid, db)
     await show_spam_words(callback)
 
+
 @router.callback_query(F.data == "admin_main")
 async def back_to_main(callback: CallbackQuery):
     b = InlineKeyboardBuilder()
@@ -393,6 +430,7 @@ async def back_to_main(callback: CallbackQuery):
     b.adjust(1)
     await callback.message.edit_text("🔐 Админ-панель", reply_markup=b.as_markup(), parse_mode="HTML")
     await callback.answer()
+
 
 @router.callback_query(F.data.startswith("spam_links_"))
 async def show_spam_links(callback: CallbackQuery):
@@ -426,6 +464,7 @@ async def show_spam_links(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=kb.as_markup(), parse_mode="HTML")
     await callback.answer()
 
+
 @router.callback_query(F.data.startswith("add_spam_link_"))
 async def start_add_spam_link(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
@@ -448,6 +487,7 @@ async def start_add_spam_link(callback: CallbackQuery):
         parse_mode="HTML"
     )
     await callback.answer()
+
 
 @router.message(WaitingSpamLink())
 async def process_spam_link(message: Message):
@@ -504,6 +544,7 @@ async def process_spam_link(message: Message):
     
     await message.answer(resp, reply_markup=kb.as_markup(), parse_mode="HTML")
 
+
 @router.callback_query(F.data.startswith("manage_spam_links_"))
 async def manage_spam_links(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
@@ -531,20 +572,27 @@ async def manage_spam_links(callback: CallbackQuery):
         await callback.message.edit_text(text, reply_markup=b.as_markup(), parse_mode="HTML")
         await callback.answer()
 
+
 @router.callback_query(F.data.startswith("del_link_"))
 async def delete_spam_link(callback: CallbackQuery):
+    """Удаление одной спам-ссылки"""
     if not is_admin(callback.from_user.id):
         return await callback.answer("Нет доступа", show_alert=True)
     
-    _, link_id, cid = callback.data.split("_")
+    # ✅ ИСПРАВЛЕНО: Правильная распаковка callback_data
+    # "del_link_789_456".split("_") = ["del", "link", "789", "456"]
+    parts = callback.data.split("_")
+    link_id = int(parts[2])  # ID спам-ссылки
+    cid = int(parts[3])      # ID чата
     
     with SessionLocal() as db:
-        link = db.query(SpamLink).get(int(link_id))
+        link = db.query(SpamLink).get(link_id)
         if link:
             detector = LinkSpamDetector()
-            await detector.remove_from_blacklist(db, int(cid), link.pattern)
+            await detector.remove_from_blacklist(db, cid, link.pattern)
     
     await manage_spam_links(callback)
+
 
 @router.callback_query(F.data.startswith("clear_links_"))
 async def clear_spam_links(callback: CallbackQuery):
@@ -559,6 +607,7 @@ async def clear_spam_links(callback: CallbackQuery):
         logger.info(f"Cleared {deleted_count} spam links for chat {cid}")
     
     await show_spam_links(callback)
+
 
 # 6. ТАКЖЕ ДОБАВИТЬ В ГЛАВНОЕ МЕНЮ АДМИНКИ (в cmd_admin):
 @router.message(Command("admin"))
@@ -575,6 +624,7 @@ async def cmd_admin(message: Message):
     builder.adjust(1)
     
     await message.answer("🔐 Админ-панель", reply_markup=builder.as_markup(), parse_mode="HTML")
+
 
 @router.callback_query(F.data == "admin_all_links")
 async def show_all_spam_links(callback: CallbackQuery):
