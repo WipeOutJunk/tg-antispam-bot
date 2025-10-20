@@ -30,6 +30,7 @@ import app.models.message_log
 import app.models.statistic
 import app.models.admin_notification
 import app.models.allowed_adder
+import app.models.profanity_word
 
 target_metadata = Base.metadata
 

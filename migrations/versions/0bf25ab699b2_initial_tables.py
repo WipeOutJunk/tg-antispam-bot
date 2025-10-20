@@ -1,8 +1,8 @@
-"""new tables
+"""initial tables
 
-Revision ID: be0b2433147f
+Revision ID: 0bf25ab699b2
 Revises: 
-Create Date: 2025-10-19 17:45:12.857268
+Create Date: 2025-10-20 14:35:45.688490
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'be0b2433147f'
+revision: str = '0bf25ab699b2'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -54,6 +54,14 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_chat_id'), 'chat', ['id'], unique=False)
+    op.create_table('profanity_words',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('word', sa.Text(), nullable=False),
+    sa.Column('created_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('word')
+    )
+    op.create_index(op.f('ix_profanity_words_id'), 'profanity_words', ['id'], unique=False)
     op.create_table('admin_notification_messages',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('admin_notification_id', sa.Integer(), nullable=False),
@@ -171,6 +179,8 @@ def downgrade() -> None:
     op.drop_table('spam_link')
     op.drop_index(op.f('ix_admin_notification_messages_id'), table_name='admin_notification_messages')
     op.drop_table('admin_notification_messages')
+    op.drop_index(op.f('ix_profanity_words_id'), table_name='profanity_words')
+    op.drop_table('profanity_words')
     op.drop_index(op.f('ix_chat_id'), table_name='chat')
     op.drop_table('chat')
     op.drop_index(op.f('ix_allowed_adders_telegram_id'), table_name='allowed_adders')
