@@ -36,9 +36,7 @@ pending_spam_word: dict[int, dict] = {}
 SENS_INPUT_TIMEOUT_SEC = 120
 pending_spam_link = {}
 
-class WaitingSpamLink(Filter):
-    async def __call__(self, message: Message) -> bool:
-        return bool(pending_spam_link.get(message.from_user.id) and message.text)
+
 
 def safe_html_escape(text: str) -> str:
     return html.escape(text or "")
@@ -104,14 +102,29 @@ def build_chat_menu(chat: Chat):
 
 class WaitingSensitivity(Filter):
     async def __call__(self, message: Message) -> bool:
+         # Проверяем что это личное сообщение
+        if message.chat.type != "private":
+            return False
+        # Проверяем что пользователь в режиме ожидания ввода
         st = pending_sensitivity.get(message.from_user.id)
-        return bool(st and st["chat_context_id"] == message.chat.id and message.text)
+        return bool(st and message.text)
 
 
 class WaitingSpamWord(Filter):
     async def __call__(self, message: Message) -> bool:
+        # Проверяем что это личное сообщение
+        if message.chat.type != "private":
+            return False
+        # Проверяем что пользователь в режиме ожидания ввода
         return bool(pending_spam_word.get(message.from_user.id) and message.text)
-
+        
+class WaitingSpamLink(Filter):
+    async def __call__(self, message: Message) -> bool:
+        # Проверяем что это личное сообщение
+        if message.chat.type != "private":
+            return False
+        # Проверяем что пользователь в режиме ожидания ввода
+        return bool(pending_spam_link.get(message.from_user.id) and message.text)
 
 @router.message(Command("start"))
 async def cmd_start(message: Message):

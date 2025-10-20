@@ -17,6 +17,8 @@ from ..services.spam_analyzer import SpamAnalyzer
 from ..services.settings_service import SettingsService
 from ..services.homoglyph_detector import HomoglyphDetector
 
+from .admin_panel import pending_spam_word, pending_sensitivity, pending_spam_link
+
 logger = logging.getLogger(__name__)
 router = Router()
 
@@ -143,6 +145,14 @@ async def delete_admin_notifications(
 # ГЛАВНОЕ: декоратор для регистрации обработчика сообщений
 @router.message()
 async def handle_all_messages(message: Message):
+    if message.chat.type == "private":
+            user_id = message.from_user.id
+            # Проверяем, ждет ли админ-панель ввода от этого пользователя
+            if user_id in pending_spam_word or user_id in pending_sensitivity or user_id in pending_spam_link:
+                logger.info(f"Skipping message from user {user_id} - waiting for admin panel input")
+                return
+            if message.from_user.is_bot:
+                return
     db = SessionLocal()
     try:
         now = datetime.now(timezone.utc)
