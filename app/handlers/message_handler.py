@@ -272,9 +272,13 @@ async def handle_all_messages(message: Message):
                 contains_spam, found_word = await spam_svc.check_message_for_spam_words(
                     message.text, message.chat.id, db
                 )
-
-                if contains_spam:
-                    logger.info(f"SPAM WORD DETECTED: '{found_word}' in message from user {message.from_user.id}")
+                # Проверка на матерные слова
+                contains_profanity, found_profanity_word = await spam_svc.check_message_for_profanity(
+                      message.text, db )
+                
+                if contains_spam or contains_profanity:
+                    detected_word = found_word or found_profanity_word
+                    logger.info(f"SPAM WORD DETECTED: '{detected_word}' in message from user {message.from_user.id}")
 
                     await message.delete()
                     until = now + timedelta(minutes=5)
@@ -285,7 +289,7 @@ async def handle_all_messages(message: Message):
                         until_date=until.timestamp()
                     )
 
-                    logger.info(f"User {message.from_user.id} muted 1h for spam word: {found_word}")
+                    logger.info(f"User {message.from_user.id} muted 5min for spam word: {found_word}")
 
                     mention = message.from_user.username or message.from_user.full_name
                     await message.bot.send_message(
@@ -319,8 +323,8 @@ async def handle_all_messages(message: Message):
                         f"🔑 <b>Username:</b> {username}"
                         f"🆔 <b>ID:</b> <code>{user_id}</code>"
                         f"💬 <b>Чат ID:</b> <code>{message.chat.id}</code>"
-                        f"🔍 <b>Найденное слово:</b> <code>{found_word}</code>"
-                        f"⏱ <b>Время мута:</b> 1 час"
+                        f"🔍 <b>Найденное слово:</b> <code>{detected_word}</code>"
+                        f"⏱ <b>Время мута:</b> 5 минут"
                         f"📝 <b>Текст сообщения:</b>"
                         f"<code>{msg_preview}</code>"
                     )
@@ -380,12 +384,12 @@ async def handle_all_messages(message: Message):
                 until_date=until.timestamp()
             )
 
-            logger.info(f"User {message.from_user.id} muted 3h for AI spam")
+            logger.info(f"User {message.from_user.id} muted 5min for AI spam")
 
             mention = message.from_user.username or message.from_user.full_name
             await message.bot.send_message(
                 message.chat.id,
-                f"⚠️ Сообщение от @{mention} удалено за спам и он не сможет писать 3 часа.",
+                f"⚠️ Сообщение от @{mention} удалено за спам и он не сможет писать 5 минут.",
                 parse_mode="HTML"
             )
 

@@ -27,6 +27,9 @@ from .models.spam_words import SpamWord
 from .models.spam_link import SpamLink
 from .models.message_log import MessageLog
 from .models.statistic import Statistic
+from .models.admin_notification import AdminNotification, AdminNotificationMessage
+from .models.allowed_adder import AllowedAdder
+from .models.profanity_word import ProfanityWord
 models = {
     "Chat": Chat,
     "User": User,
@@ -36,12 +39,17 @@ models = {
     "SpamLink": SpamLink,
     "MessageLog": MessageLog,
     "Statistic": Statistic,
+    "AdminNotification": AdminNotification,
+    "AdminNotificationMessage": AdminNotificationMessage,
+    "AllowedAdder": AllowedAdder,
+    "ProfanityWord": ProfanityWord,
+
 }
 
 
 def init_db():
     # Импортируем все модели, чтобы DeclarativeBase их зарегистрировал
-    from .models import chat, user, warning, ban, spam_words, spam_link, message_log, statistic
+    from .models import chat, user, warning, ban, spam_words, spam_link, message_log, statistic, admin_notification, allowed_adder, profanity_word
 
 
     # Создаём все таблицы

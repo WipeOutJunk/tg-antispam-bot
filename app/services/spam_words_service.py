@@ -3,6 +3,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 from ..models.spam_words import SpamWord
 from ..models.chat import Chat
+from ..models.profanity_word import ProfanityWord
 import logging
 import re
 logger = logging.getLogger(__name__)
@@ -178,7 +179,53 @@ class SpamWordsService:
         except Exception as e:
             logger.error(f"Error checking spam words: {e}")
             return False, None
-    
+    async def check_message_for_profanity(
+        self,
+        message_text: str,
+        db: Session
+    ) -> tuple[bool, Optional[str]]:
+        """
+        Проверить сообщение на наличие профанити (матерных слов) из глобальной таблицы
+        
+        Args:
+            message_text: Текст сообщения
+            db: Сессия БД
+            
+        Returns:
+            Tuple (содержит_профанити, найденное_слово)
+        """
+        try:
+            if not message_text:
+                return False, None
+
+            # Получаем все профанити-слова (глобальные, не привязаны к чату)
+            profanity_words = db.query(ProfanityWord).order_by(ProfanityWord.created_at.desc()).all()
+
+            if not profanity_words:
+                return False, None
+
+            # Нормализуем текст сообщения
+            normalized_text = message_text.lower()
+
+            for profanity_word in profanity_words:
+                word_lower = profanity_word.word.lower().strip()
+
+                if not word_lower:  # Пропускаем пустые слова
+                    continue
+
+                # Используем регулярное выражение с границами слов
+                pattern = r'\b' + re.escape(word_lower) + r'\b'
+
+                if re.search(pattern, normalized_text):
+                    logger.info(f"Found profanity word '{profanity_word.word}' in message")
+                    return True, profanity_word.word
+
+            return False, None
+
+        except Exception as e:
+            logger.error(f"Error checking profanity words: {e}")
+            return False, None
+        
     async def bulk_add_spam_words(
         self,
         chat_id: int,
