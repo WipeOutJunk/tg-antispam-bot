@@ -39,12 +39,10 @@ class AntiSpamBot:
         self.bot = Bot(token=BOT_TOKEN)
         self.dp = Dispatcher()
 
-        # ВАЖНО: chat_events_router должен быть ПЕРВЫМ!
         self.dp.include_router(admin_router)
         self.dp.include_router(chat_events_router)
         self.dp.include_router(message_router)
 
-        # УБРАНО: self.dp.my_chat_member.register(self._on_my_chat_member_update)
 
         self.spam_analyzer = SpamAnalyzer(ML_MODEL_PATH)
         self.settings_service = SettingsService()

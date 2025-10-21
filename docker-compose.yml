@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  anti-spam-bot:
+    build: .
+    container_name: anti-spam-telegram-bot
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    volumes:
+      - ./data:/app/data              # SQLite 
+      - ./bot.log:/app/bot.log        # Логи
+      - ./ru_curse_words.txt:/app/ru_curse_words.txt  # Файл со словами
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Healthcheck 
+    # healthcheck:
+    #   test: ["CMD", "python", "-c", "import sqlite3; sqlite3.connect('/app/data/bot.db')"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+
+volumes:
+  bot-data:
+    driver: local

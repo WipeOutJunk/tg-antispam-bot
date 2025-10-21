@@ -16,15 +16,9 @@ from ..models.allowed_adder import AllowedAdder
 logger = logging.getLogger(__name__)
 router = Router()
 
-
-# Словарь для отслеживания ожидания активации: user_id -> {"chat_id": int, "waiting_for_code": bool, "activated": bool}
 pending_activations = {}
 
-
-# Получаем секретное слово из переменных окружения
 SECRET_ACTIVATION_WORD = os.getenv("SECRET_ACTIVATION_WORD", "default_secret_word")
-
-
 
 @router.my_chat_member()
 async def bot_added_removed(event: ChatMemberUpdated):
