@@ -41,7 +41,7 @@ def load_profanity_words(session):
     """Загрузка нецензурных слов из файла в БД"""
     logger = logging.getLogger(__name__)
 
-    words_file = "ru_curse_words.txt"
+    words_file = "data/ru_curse_words.txt"
 
     if not os.path.exists(words_file):
         logger.warning(f" Файл {words_file} не найден, пропускаем загрузку")

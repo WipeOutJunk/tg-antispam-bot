@@ -4,7 +4,7 @@ from .models.base import Base
 import os
 
 # Путь к SQLite-файлу (или URL для другой БД)
-DB_URL = os.getenv("DATABASE_URL", "sqlite:///./bot.db")
+DB_URL = os.getenv("DATABASE_URL", "sqlite:///./data/bot.db")
 
 # Создаём движок
 engine = create_engine(
