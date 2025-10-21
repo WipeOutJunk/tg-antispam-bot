@@ -145,6 +145,19 @@ async def delete_admin_notifications(
 # ГЛАВНОЕ: декоратор для регистрации обработчика сообщений
 @router.message()
 async def handle_all_messages(message: Message):
+    chat_id = message.chat.id
+    bot_id = message.bot.id
+
+    ## Проверка покинул ли бот группу 
+    try:
+        bot_member = await message.bot.get_chat_member(chat_id, bot_id)
+        if bot_member.status in ["left", "kicked"]:
+            logger.info(f"Ignoring message from chat {chat_id}: bot status {bot_member.status}")
+            return  
+    except Exception as e:
+        logger.warning(f"Could not check bot status in chat {chat_id}: {e}")
+        return
+    
     if message.chat.type == "private":
             user_id = message.from_user.id
             # Проверяем, ждет ли админ-панель ввода от этого пользователя

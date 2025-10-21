@@ -11,45 +11,44 @@ from ..database import SessionLocal
 from ..models.chat import Chat
 from ..models.user import User
 from ..models.allowed_adder import AllowedAdder
-
+from .bot_removal import handle_bot_removed
+from ..services.caht_cleanup_service import ChatCleanupService
 
 logger = logging.getLogger(__name__)
 router = Router()
-
+cleanup_service = ChatCleanupService()
 pending_activations = {}
-
 SECRET_ACTIVATION_WORD = os.getenv("SECRET_ACTIVATION_WORD", "default_secret_word")
+
 
 @router.my_chat_member()
 async def bot_added_removed(event: ChatMemberUpdated):
     """Обработка добавления/удаления бота с проверкой whitelist"""
-    print("CHAT_EVENTS MODULE LOADED")
-    
     bot_user = await event.bot.get_me()
     if event.new_chat_member.user.id != bot_user.id:
         return
-    
+
     chat_id = event.chat.id
-    logger.info(f"BOT STATUS CHANGE: {event.old_chat_member.status} -> {event.new_chat_member.status} in {chat_id}")
-    
-    if event.new_chat_member.status in ("member", "administrator"):
-        # Бот добавлен - проверяем whitelist
-        adder_id = event.from_user.id  # ID пользователя, который добавил бота
-        
+    old_status = event.old_chat_member.status
+    new_status = event.new_chat_member.status
+
+    logger.info(f"BOT STATUS CHANGE: {old_status} -> {new_status} in {chat_id}")
+
+    # ========== БОТ ДОБАВЛЕН В ЧАТ ==========
+    if new_status in ("member", "administrator"):
+        adder_id = event.from_user.id
         with SessionLocal() as db:
-            # Проверяем, есть ли пользователь в whitelist
             allowed = db.query(AllowedAdder).filter_by(telegram_id=adder_id).first()
-            
+
             if not allowed:
                 # Пользователь не в whitelist - запускаем процесс активации
                 logger.warning(f"User {adder_id} is not in whitelist. Starting activation process for chat {chat_id}")
-                
                 pending_activations[adder_id] = {
                     "chat_id": chat_id,
                     "waiting_for_code": False,
                     "activated": False
                 }
-                
+
                 # Отправляем сообщение в личку пользователю
                 try:
                     await event.bot.send_message(
@@ -60,33 +59,33 @@ async def bot_added_removed(event: ChatMemberUpdated):
                     logger.info(f"Activation request sent to user {adder_id} in private chat")
                 except Exception as e:
                     logger.error(f"Failed to send activation message to user {adder_id}: {e}")
-                    # Если не удалось отправить в личку, отправляем в группу
                     await event.bot.send_message(
                         chat_id,
-                        "⚠️ Для активации бота напишите мне в личные сообщения (@{}) и используйте команду /activate\n"
-                        "У вас есть 2 минуты для активации, иначе бот покинет чат.".format(bot_user.username)
+                        f"⚠️ Для активации бота напишите мне в личные сообщения (@{bot_user.username}) и используйте команду /activate\n"
+                        f"У вас есть 2 минуты для активации, иначе бот покинет чат."
                     )
-                
+
                 # Запускаем таймер на выход из чата (2 минуты)
                 asyncio.create_task(check_activation_timeout(event.bot, chat_id, adder_id, timeout=120))
                 return
             else:
                 logger.info(f"User {adder_id} is in whitelist. Bot activated for chat {chat_id}")
-        
-        # Если пользователь в whitelist или активация прошла - создаём чат и админов
+
+        # Если пользователь в whitelist - создаём чат и админов
         await create_chat_and_admins(event.bot, chat_id, event.chat.title or "")
-    
-    elif event.new_chat_member.status == "left":
-        # Бот удалён - удаляем всё
-        with SessionLocal() as db:
-            db.query(Chat).filter(Chat.id == chat_id).delete()
-            db.commit()
-            logger.info(f"CHAT {chat_id} DELETED")
+
+    # ========== БОТ УДАЛЁН ИЗ ЧАТА ==========
+    elif old_status != "left" and (new_status == "left" or new_status == "kicked") :
+        logger.info(f"Bot removed from chat {chat_id}. Starting cleanup...")
         
-        # Удаляем из pending_activations если есть (ищем по chat_id)
+        # Вызываем сервис для каскадного удаления
+        await handle_bot_removed(event, event.bot)
+        
+        # Удаляем из pending_activations если есть
         for user_id, data in list(pending_activations.items()):
             if data.get("chat_id") == chat_id:
                 pending_activations.pop(user_id, None)
+                logger.info(f"Removed pending activation for user {user_id}")
 
 
 async def create_chat_and_admins(bot, chat_id: int, chat_title: str = ""):
