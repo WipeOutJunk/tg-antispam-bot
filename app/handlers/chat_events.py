@@ -59,11 +59,11 @@ async def bot_added_removed(event: ChatMemberUpdated):
                     logger.info(f"Activation request sent to user {adder_id} in private chat")
                 except Exception as e:
                     logger.error(f"Failed to send activation message to user {adder_id}: {e}")
-                    await event.bot.send_message(
-                        chat_id,
-                        f"⚠️ Для активации бота напишите мне в личные сообщения (@{bot_user.username}) и используйте команду /activate\n"
-                        f"У вас есть 2 минуты для активации, иначе бот покинет чат."
-                    )
+                    # await event.bot.send_message(
+                    #     chat_id,
+                    #     f"⚠️ Для активации бота напишите мне в личные сообщения (@{bot_user.username}) и используйте команду /activate\n"
+                    #     f"У вас есть 2 минуты для активации, иначе бот покинет чат."
+                    # )
 
                 # Запускаем таймер на выход из чата (2 минуты)
                 asyncio.create_task(check_activation_timeout(event.bot, chat_id, adder_id, timeout=120))
@@ -145,12 +145,6 @@ async def check_activation_timeout(bot, chat_id: int, adder_id: int, timeout: in
                 )
             except:
                 pass
-            
-            # Уведомляем в группе
-            await bot.send_message(
-                chat_id,
-                "❌ Время активации истекло. Бот покидает чат."
-            )
             await bot.leave_chat(chat_id)
             pending_activations.pop(adder_id, None)
         except Exception as e:
@@ -237,16 +231,7 @@ async def check_activation_word(message: Message):
         
         # Отправляем подтверждение пользователю в личку
         await message.reply("✅ Бот успешно активирован! Теперь вы можете использовать все функции в вашем чате.")
-        
-        # Отправляем уведомление в группу
-        try:
-            await message.bot.send_message(
-                chat_id,
-                "✅ Бот успешно активирован и готов к работе!"
-            )
-        except Exception as e:
-            logger.error(f"Failed to send activation confirmation to chat {chat_id}: {e}")
-        
+       
         logger.info(f"Chat {chat_id} activated by user {user_id}")
         
         # Удаляем из pending после успешной активации

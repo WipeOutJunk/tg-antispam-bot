@@ -315,11 +315,11 @@ async def handle_all_messages(message: Message):
                     logger.info(f"User {message.from_user.id} muted 5min for spam word: {found_word}")
 
                     mention = message.from_user.username or message.from_user.full_name
-                    await message.bot.send_message(
-                        message.chat.id,
-                        f"⚠️ Сообщение от @{mention} удалено за использование запрещенного слова и он не сможет писать 1 час.",
-                        parse_mode="HTML"
-                    )
+                    # await message.bot.send_message(
+                    #     message.chat.id,
+                    #     f"⚠️ Сообщение от @{mention} удалено за использование запрещенного слова и он не сможет писать 1 час.",
+                    #     parse_mode="HTML"
+                    # )
 
                     kb = InlineKeyboardMarkup(inline_keyboard=[[
                         InlineKeyboardButton(
@@ -410,11 +410,11 @@ async def handle_all_messages(message: Message):
             logger.info(f"User {message.from_user.id} muted 5min for AI spam")
 
             mention = message.from_user.username or message.from_user.full_name
-            await message.bot.send_message(
-                message.chat.id,
-                f"⚠️ Сообщение от @{mention} удалено за спам и он не сможет писать 5 минут.",
-                parse_mode="HTML"
-            )
+            # await message.bot.send_message(
+            #     message.chat.id,
+            #     f"⚠️ Сообщение от @{mention} удалено за спам и он не сможет писать 5 минут.",
+            #     parse_mode="HTML"
+            # )
 
             kb = InlineKeyboardMarkup(inline_keyboard=[[
                 InlineKeyboardButton(
@@ -494,11 +494,11 @@ async def on_homoglyph_decision(cb: CallbackQuery):
                 if log:
                     user = db.query(User).filter_by(telegram_id=user_id).first()
                     username = user.username if user and user.username else f"ID{user_id}"
-                    await cb.bot.send_message(
-                        chat_id,
-                        f"✅ Сообщение от @{username} восстановлено администратором.",
-                        parse_mode="HTML"
-                    )
+                    # await cb.bot.send_message(
+                    #     chat_id,
+                    #     f"✅ Сообщение от @{username} восстановлено администратором.",
+                    #     parse_mode="HTML"
+                    # )
         await cb.answer()
     except Exception as e:
         logger.error(f"Error in homoglyph decision: {e}")
@@ -541,11 +541,11 @@ async def on_spam_word_decision(cb: CallbackQuery):
                 if log:
                     user = db.query(User).filter_by(telegram_id=user_id).first()
                     username = user.username if user and user.username else f"ID{user_id}"
-                    await cb.bot.send_message(
-                        chat_id,
-                        f"✅ Сообщение от @{username} восстановлено администратором.",
-                        parse_mode="HTML"
-                    )
+                    # await cb.bot.send_message(
+                    #     chat_id,
+                    #     f"✅ Сообщение от @{username} восстановлено администратором.",
+                    #     parse_mode="HTML"
+                    # )
         await cb.answer()
     except Exception as e:
         logger.error(f"Error in spam word decision: {e}")
@@ -588,11 +588,11 @@ async def on_ai_spam_decision(cb: CallbackQuery):
                 if log:
                     user = db.query(User).filter_by(telegram_id=user_id).first()
                     username = user.username if user and user.username else f"ID{user_id}"
-                    await cb.bot.send_message(
-                        chat_id,
-                        f"✅ Сообщение от @{username} восстановлено администратором.",
-                        parse_mode="HTML"
-                    )
+                    # await cb.bot.send_message(
+                    #     chat_id,
+                    #     f"✅ Сообщение от @{username} восстановлено администратором.",
+                    #     parse_mode="HTML"
+                    # )
         await cb.answer()
     except Exception as e:
         logger.error(f"Error in AI spam decision: {e}")
@@ -633,11 +633,11 @@ async def on_flood_decision(cb: CallbackQuery):
             with SessionLocal() as db:
                 user = db.query(User).filter_by(telegram_id=user_id).first()
                 username = user.username if user and user.username else f"ID{user_id}"
-                await cb.bot.send_message(
-                    chat_id,
-                    f"✅ @{username} разблокирован администратором.",
-                    parse_mode="HTML"
-                )
+                # await cb.bot.send_message(
+                #     chat_id,
+                #     f"✅ @{username} разблокирован администратором.",
+                #     parse_mode="HTML"
+                # )
         await cb.answer()
     except Exception as e:
         logger.error(f"Error in flood decision: {e}")
