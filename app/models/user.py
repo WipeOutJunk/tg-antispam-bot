@@ -1,12 +1,15 @@
 from sqlalchemy.orm import DeclarativeBase, relationship
-from sqlalchemy import Column, Integer, Text, Boolean, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, Text, Boolean, ForeignKey, DateTime, UniqueConstraint
 from .base import Base
 
 
 class User(Base):
     __tablename__ = "user"
-    id           = Column(Integer, primary_key=True, index=True)
-    telegram_id  = Column(Integer, unique=True, index=True)
+    __table_args__ = (
+        UniqueConstraint('telegram_id', 'chat_id', name='ix_user_telegram_chat'),
+    )
+    id           = Column(Integer, primary_key=True)
+    telegram_id  = Column(Integer, nullable=False)
     username     = Column(Text)
     joined_at    = Column(DateTime)
     is_admin     = Column(Boolean, default=False)
