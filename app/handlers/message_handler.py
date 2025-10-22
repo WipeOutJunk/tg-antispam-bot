@@ -17,7 +17,7 @@ from ..services.spam_analyzer import SpamAnalyzer
 from ..services.settings_service import SettingsService
 from ..services.homoglyph_detector import HomoglyphDetector
 
-from .admin_panel import pending_spam_word, pending_sensitivity, pending_spam_link
+from .admin_panel import pending_spam_word, pending_sensitivity, pending_spam_link, is_admin
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -166,6 +166,10 @@ async def handle_all_messages(message: Message):
                 return
             if message.from_user.is_bot:
                 return
+    ## FIX: НЕ ПРОВЕРЯЕМ СООБЩЕНИЯ АДМИНОВ
+    if is_admin(message.from_user.id):
+        return
+    
     db = SessionLocal()
     try:
         now = datetime.now(timezone.utc)
