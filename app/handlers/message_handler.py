@@ -380,14 +380,14 @@ async def handle_all_messages(message: Message):
         # 4) AI-спам
         logger.debug("Starting AI spam analysis...")
         is_spam = False
-        if not message.sticker:
+        word_count = len(message.text.split()) if message.text else 0
+        if not message.sticker and word_count >= 4:
             try:
                 svc = SettingsService()
                 chat_settings = (
                     await svc.get_chat_settings(message.chat.id, db) or
                     await svc.create_default_settings(message.chat.id, db, title=message.chat.title)
                 )
-
                 analyzer = SpamAnalyzer(ML_MODEL_PATH)
                 raw = await analyzer.analyze_message(message, chat_settings, db)
                 is_spam = analyzer.is_spam(raw, chat_settings)
