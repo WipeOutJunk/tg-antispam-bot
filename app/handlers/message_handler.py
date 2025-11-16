@@ -16,12 +16,28 @@ from ..models.user import User
 from ..services.spam_analyzer import SpamAnalyzer
 from ..services.settings_service import SettingsService
 from ..services.homoglyph_detector import HomoglyphDetector
-
+import emoji
 from .admin_panel import pending_spam_word, pending_sensitivity, pending_spam_link, is_admin
 
 logger = logging.getLogger(__name__)
 router = Router()
 
+def count_consecutive_emojis(text: str) -> int:
+    """Подсчитывает максимальное количество эмоджи, идущих подряд"""
+    if not text:
+        return 0
+    
+    max_consecutive = 0
+    current_consecutive = 0
+    
+    for char in text:
+        if char in emoji.EMOJI_DATA:
+            current_consecutive += 1
+            max_consecutive = max(max_consecutive, current_consecutive)
+        else:
+            current_consecutive = 0
+    
+    return max_consecutive
 def create_mute_until(minutes=0, hours=0, days=0):
     from datetime import timezone
     now = datetime.now(timezone.utc)
@@ -376,6 +392,73 @@ async def handle_all_messages(message: Message):
 
             except Exception as e:
                 logger.error(f"Error handling spam word: {e}")
+        # 3.5) Проверка на эмоджи-спам
+        if message.text:
+            try:
+                emoji_count = count_consecutive_emojis(message.text)
+                
+                if emoji_count >= 5:
+                    logger.info(f"EMOJI SPAM DETECTED: {emoji_count} consecutive emojis from user {message.from_user.id}")
+                    
+                    await message.delete()
+                    until = now + timedelta(minutes=5)
+                    await message.bot.restrict_chat_member(
+                        chat_id=message.chat.id,
+                        user_id=message.from_user.id,
+                        permissions=ChatPermissions(can_send_messages=False),
+                        until_date=until.timestamp()
+                    )
+                    
+                    logger.info(f"User {message.from_user.id} muted 5min for emoji spam")
+                    
+                    kb = InlineKeyboardMarkup(inline_keyboard=[[
+                        InlineKeyboardButton(
+                            text="✅ Одобрить сообщение",
+                            callback_data=f"approve_emoji:{message.chat.id}:{message.message_id}:{message.from_user.id}"
+                        ),
+                        InlineKeyboardButton(
+                            text="❌ Отклонить",
+                            callback_data=f"reject_emoji:{message.chat.id}:{message.message_id}"
+                        )
+                    ]])
+                    
+                    username = f"@{message.from_user.username}" if message.from_user.username else "без username"
+                    user_id = message.from_user.id
+                    full_name = message.from_user.full_name
+                    msg_preview = message.text[:200] if len(message.text) <= 200 else message.text[:197] + "..."
+                    
+                    admin_text = (
+                        f"🚫 <b>ОБНАРУЖЕН ЭМОДЖИ-СПАМ</b>\n\n"
+                        f"👤 <b>Пользователь:</b> {full_name}\n"
+                        f"🔑 <b>Username:</b> {username}\n"
+                        f"🆔 <b>ID:</b> <code>{user_id}</code>\n"
+                        f"💬 <b>Чат ID:</b> <code>{message.chat.id}</code>\n"
+                        f"😀 <b>Эмоджи подряд:</b> <code>{emoji_count}</code>\n"
+                        f"⏱ <b>Время мута:</b> 5 минут\n\n"
+                        f"📝 <b>Текст сообщения:</b>\n"
+                        f"<code>{msg_preview}</code>"
+                    )
+                    
+                    await send_notifications_to_admins_with_sync(
+                        bot=message.bot,
+                        admin_text=admin_text,
+                        kb=kb,
+                        original_chat_id=message.chat.id,
+                        original_message_id=message.message_id,
+                        event_type="emoji",
+                        event_data={
+                            "emoji_count": emoji_count,
+                            "user_id": message.from_user.id,
+                            "content": message.text[:200]
+                        }
+                    )
+                    
+                    log_entry.is_spam = True
+                    db.commit()
+                    return
+                    
+            except Exception as e:
+                logger.error(f"Error handling emoji spam: {e}")
 
         # 4) AI-спам
         logger.debug("Starting AI spam analysis...")
@@ -645,6 +728,42 @@ async def on_flood_decision(cb: CallbackQuery):
         await cb.answer()
     except Exception as e:
         logger.error(f"Error in flood decision: {e}")
+        await cb.answer()
+@router.callback_query(F.data.startswith(("approve_emoji:", "reject_emoji:")))
+async def on_emoji_spam_decision(cb: CallbackQuery):
+    try:
+        parts = cb.data.split(":", 4)
+        action = parts[0]
+        chat_id = int(parts[1])
+        msg_id = int(parts[2])
+        
+        try:
+            await cb.message.delete()
+        except:
+            pass
+        
+        await delete_admin_notifications(
+            bot=cb.bot,
+            original_chat_id=chat_id,
+            original_message_id=msg_id,
+            event_type="emoji",
+            processed_by=cb.from_user.id
+        )
+        
+        if action == "approve_emoji":
+            user_id = int(parts[3])
+            await cb.bot.restrict_chat_member(
+                chat_id=chat_id,
+                user_id=user_id,
+                permissions=ChatPermissions(
+                    can_send_messages=True,
+                    can_send_media_messages=True,
+                    can_send_other_messages=True
+                )
+            )
+        await cb.answer()
+    except Exception as e:
+        logger.error(f"Error in emoji spam decision: {e}")
         await cb.answer()
 
 # Экспортируем роутер для подключения в bot.py
